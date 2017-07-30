@@ -1,4 +1,3 @@
-#![feature(vec_remove_item)]
 #![feature(plugin)]
 #![plugin(rocket_codegen)]
 
