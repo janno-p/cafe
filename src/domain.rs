@@ -5,13 +5,15 @@ use uuid::Uuid;
 pub enum Command {
     OpenTab(Uuid, u8, String),
     PlaceOrder(Uuid, Vec<OrderedItem>),
-    MarkDrinksServed(Uuid, Vec<i32>)
+    MarkDrinksServed(Uuid, Vec<i32>),
+    MarkFoodServed(Uuid, Vec<i32>)
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CommandError {
     TabNotOpen,
-    DrinksNotOutstanding
+    DrinksNotOutstanding,
+    FoodNotOutstanding
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -20,13 +22,15 @@ pub enum Event {
     TabOpened { table_number: u8, waiter: String },
     DrinksOrdered { items: Vec<OrderedItem> },
     FoodOrdered { items: Vec<OrderedItem> },
-    DrinksServed { menu_numbers: Vec<i32> }
+    DrinksServed { menu_numbers: Vec<i32> },
+    FoodServed { menu_numbers: Vec<i32> }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct State {
     tab_open: bool,
-    outstanding_drinks: Vec<i32>
+    outstanding_drinks: Vec<i32>,
+    outstanding_food: Vec<i32>
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -48,7 +52,8 @@ impl Aggregate for Tab {
     fn initial_state() -> State {
         State {
             tab_open: false,
-            outstanding_drinks: Vec::new()
+            outstanding_drinks: Vec::new(),
+            outstanding_food: Vec::new()
         }
     }
 
@@ -78,11 +83,16 @@ impl Aggregate for Tab {
                 }
             },
             MarkDrinksServed(_, menu_numbers) => {
-                if !state.are_drinks_outstanding(&menu_numbers) {
-                    return Err(DrinksNotOutstanding);
+                match state.are_drinks_outstanding(&menu_numbers) {
+                    true => Ok(vec![DrinksServed { menu_numbers: menu_numbers }]),
+                    false => Err(DrinksNotOutstanding)
                 }
-
-                Ok(vec![DrinksServed { menu_numbers: menu_numbers }])
+            },
+            MarkFoodServed(_, menu_numbers) => {
+                match state.is_food_outstanding(&menu_numbers) {
+                    true => Ok(vec![FoodServed { menu_numbers: menu_numbers }]),
+                    false => Err(FoodNotOutstanding)
+                }
             },
             _ => Ok(vec![])
         }
@@ -97,11 +107,20 @@ impl Aggregate for Tab {
                 let mut menu_numbers: Vec<i32> = items.iter().map(|d| d.menu_number).collect();
                 state.outstanding_drinks.append(&mut menu_numbers);
             },
+            FoodOrdered { items } => {
+                let mut menu_numbers: Vec<i32> = items.iter().map(|d| d.menu_number).collect();
+                state.outstanding_food.append(&mut menu_numbers);
+            },
             DrinksServed { menu_numbers } => {
                 for menu_number in menu_numbers.iter() {
                     state.outstanding_drinks.remove_item(menu_number);
                 }
             },
+            FoodServed { menu_numbers } => {
+                for menu_number in menu_numbers.iter() {
+                    state.outstanding_food.remove_item(menu_number);
+                }
+            }
             _ => {}
         }
     }
@@ -114,6 +133,20 @@ impl State {
         for menu_number in menu_numbers.iter() {
             if current_outstanding_drinks.contains(menu_number) {
                 current_outstanding_drinks.remove_item(menu_number);
+            } else {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn is_food_outstanding(&self, menu_numbers: &Vec<i32>) -> bool {
+        let mut current_outstanding_food = self.outstanding_food.clone();
+
+        for menu_number in menu_numbers.iter() {
+            if current_outstanding_food.contains(menu_number) {
+                current_outstanding_food.remove_item(menu_number);
             } else {
                 return false;
             }
@@ -210,5 +243,41 @@ mod tests {
          let command = Command::MarkDrinksServed(Uuid::new_v4(), vec![drink.menu_number]);
          let events = Tab::decide(&state, command);
          assert_eq!(events, Err(CommandError::DrinksNotOutstanding));
+    }
+
+    #[test]
+    fn ordered_food_can_be_served() {
+        let mut state = Tab::initial_state();
+        Tab::evolve(&mut state, Event::TabOpened { table_number: 42, waiter: "Derek".to_string() });
+        let food1 = OrderedItem { menu_number: 1, description: "".to_string(), is_drink: false, price: 0.0 };
+        let food2 = OrderedItem { menu_number: 2, description: "".to_string(), is_drink: false, price: 0.0 };
+        Tab::evolve(&mut state, Event::FoodOrdered { items: vec![food1.clone(), food2.clone()] });
+        let command = Command::MarkFoodServed(Uuid::new_v4(), vec![food1.menu_number, food2.menu_number]);
+        let events = Tab::decide(&state, command);
+        assert_eq!(events, Ok(vec![Event::FoodServed { menu_numbers: vec![food1.menu_number, food2.menu_number] }]));
+    }
+
+    #[test]
+    fn can_not_serve_an_unordered_food() {
+         let mut state = Tab::initial_state();
+         Tab::evolve(&mut state, Event::TabOpened { table_number: 42, waiter: "Derek".to_string() });
+         let food1 = OrderedItem { menu_number: 1, description: "".to_string(), is_drink: false, price: 0.0 };
+         let food2 = OrderedItem { menu_number: 2, description: "".to_string(), is_drink: false, price: 0.0 };
+         Tab::evolve(&mut state, Event::FoodOrdered { items: vec![food1.clone()] });
+         let command = Command::MarkFoodServed(Uuid::new_v4(), vec![food2.menu_number]);
+         let events = Tab::decide(&state, command);
+         assert_eq!(events, Err(CommandError::FoodNotOutstanding));
+    }
+
+    #[test]
+    fn can_not_serve_an_ordered_food_twice() {
+         let mut state = Tab::initial_state();
+         Tab::evolve(&mut state, Event::TabOpened { table_number: 42, waiter: "Derek".to_string() });
+         let food = OrderedItem { menu_number: 1, description: "".to_string(), is_drink: false, price: 0.0 };
+         Tab::evolve(&mut state, Event::FoodOrdered { items: vec![food.clone()] });
+         Tab::evolve(&mut state, Event::FoodServed { menu_numbers: vec![food.menu_number] });
+         let command = Command::MarkFoodServed(Uuid::new_v4(), vec![food.menu_number]);
+         let events = Tab::decide(&state, command);
+         assert_eq!(events, Err(CommandError::FoodNotOutstanding));
     }
 }
