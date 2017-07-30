@@ -1,5 +1,4 @@
 use cqrs::Aggregate;
-use std::iter::FromIterator;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,12 +58,15 @@ impl Aggregate for Tab {
                 if state.tab_open {
                     let (drinks, foods): (Vec<OrderedItem>, Vec<OrderedItem>) = items.into_iter().partition(|ref n| n.is_drink);
                     let mut events = vec![];
-                    if foods.len() > 0 {
+
+                    if !foods.is_empty() {
                         events.push(FoodOrdered { items: foods });
                     }
-                    if drinks.len() > 0 {
+
+                    if !drinks.is_empty() {
                         events.push(DrinksOrdered { items: drinks });
                     }
+
                     Ok(events)
                 } else {
                     Err(TabNotOpen)
