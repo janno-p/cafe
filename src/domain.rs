@@ -30,7 +30,8 @@ pub enum Event {
 pub struct State {
     tab_open: bool,
     outstanding_drinks: Vec<OrderedItem>,
-    outstanding_food: Vec<OrderedItem>
+    outstanding_food: Vec<OrderedItem>,
+    served_items_value: f32 // TODO: use decimal
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -53,7 +54,8 @@ impl Aggregate for Tab {
         State {
             tab_open: false,
             outstanding_drinks: Vec::new(),
-            outstanding_food: Vec::new()
+            outstanding_food: Vec::new(),
+            served_items_value: 0.0
         }
     }
 
@@ -107,12 +109,18 @@ impl Aggregate for Tab {
             FoodOrdered { mut items } => state.outstanding_food.append(&mut items),
             DrinksServed { menu_numbers } => {
                 for menu_number in menu_numbers {
-                    state.outstanding_drinks.retain(|x| x.menu_number != menu_number);
+                    if let Some(index) = state.outstanding_drinks.iter().position(|x| x.menu_number == menu_number) {
+                        state.served_items_value += state.outstanding_drinks[index].price;
+                        state.outstanding_drinks.remove(index);
+                    }
                 }
             },
             FoodServed { menu_numbers } => {
                 for menu_number in menu_numbers {
-                    state.outstanding_food.retain(|x| x.menu_number != menu_number);
+                    if let Some(index) = state.outstanding_food.iter().position(|x| x.menu_number == menu_number) {
+                        state.served_items_value += state.outstanding_food[index].price;
+                        state.outstanding_food.remove(index);
+                    }
                 }
             }
             _ => {}
