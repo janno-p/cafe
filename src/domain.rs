@@ -29,8 +29,8 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq)]
 pub struct State {
     tab_open: bool,
-    outstanding_drinks: Vec<i32>,
-    outstanding_food: Vec<i32>
+    outstanding_drinks: Vec<OrderedItem>,
+    outstanding_food: Vec<OrderedItem>
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -103,22 +103,16 @@ impl Aggregate for Tab {
 
         match event {
             TabOpened { .. } => state.tab_open = true,
-            DrinksOrdered { items } => {
-                let mut menu_numbers: Vec<i32> = items.iter().map(|d| d.menu_number).collect();
-                state.outstanding_drinks.append(&mut menu_numbers);
-            },
-            FoodOrdered { items } => {
-                let mut menu_numbers: Vec<i32> = items.iter().map(|d| d.menu_number).collect();
-                state.outstanding_food.append(&mut menu_numbers);
-            },
+            DrinksOrdered { mut items } => state.outstanding_drinks.append(&mut items),
+            FoodOrdered { mut items } => state.outstanding_food.append(&mut items),
             DrinksServed { menu_numbers } => {
-                for menu_number in menu_numbers.iter() {
-                    state.outstanding_drinks.remove_item(menu_number);
+                for menu_number in menu_numbers {
+                    state.outstanding_drinks.retain(|x| x.menu_number != menu_number);
                 }
             },
             FoodServed { menu_numbers } => {
-                for menu_number in menu_numbers.iter() {
-                    state.outstanding_food.remove_item(menu_number);
+                for menu_number in menu_numbers {
+                    state.outstanding_food.retain(|x| x.menu_number != menu_number);
                 }
             }
             _ => {}
@@ -130,9 +124,9 @@ impl State {
     fn are_drinks_outstanding(&self, menu_numbers: &Vec<i32>) -> bool {
         let mut current_outstanding_drinks = self.outstanding_drinks.clone();
 
-        for menu_number in menu_numbers.iter() {
-            if current_outstanding_drinks.contains(menu_number) {
-                current_outstanding_drinks.remove_item(menu_number);
+        for menu_number in menu_numbers {
+            if let Some(index) = current_outstanding_drinks.iter().position(|x| x.menu_number == *menu_number) {
+                current_outstanding_drinks.remove(index);
             } else {
                 return false;
             }
@@ -144,9 +138,9 @@ impl State {
     fn is_food_outstanding(&self, menu_numbers: &Vec<i32>) -> bool {
         let mut current_outstanding_food = self.outstanding_food.clone();
 
-        for menu_number in menu_numbers.iter() {
-            if current_outstanding_food.contains(menu_number) {
-                current_outstanding_food.remove_item(menu_number);
+        for menu_number in menu_numbers {
+            if let Some(index) = current_outstanding_food.iter().position(|x| x.menu_number == *menu_number) {
+                current_outstanding_food.remove(index);
             } else {
                 return false;
             }
