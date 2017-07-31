@@ -68,7 +68,7 @@ impl Aggregate for Tab {
             OpenTab(_, table_number, waiter) => Ok(vec![TabOpened { table_number, waiter }]),
             PlaceOrder(_, items) => {
                 if state.tab_open {
-                    let (drinks, foods): (Vec<OrderedItem>, Vec<OrderedItem>) = items.into_iter().partition(|ref n| n.is_drink);
+                    let (drinks, foods): (Vec<OrderedItem>, Vec<OrderedItem>) = items.into_iter().partition(|n| n.is_drink);
                     let mut events = vec![];
 
                     if !foods.is_empty() {
@@ -85,15 +85,17 @@ impl Aggregate for Tab {
                 }
             },
             MarkDrinksServed(_, menu_numbers) => {
-                match state.are_drinks_outstanding(&menu_numbers) {
-                    true => Ok(vec![DrinksServed { menu_numbers: menu_numbers }]),
-                    false => Err(DrinksNotOutstanding)
+                if state.are_drinks_outstanding(&menu_numbers) {
+                    Ok(vec![DrinksServed { menu_numbers: menu_numbers }])
+                } else {
+                    Err(DrinksNotOutstanding)
                 }
             },
             MarkFoodServed(_, menu_numbers) => {
-                match state.is_food_outstanding(&menu_numbers) {
-                    true => Ok(vec![FoodServed { menu_numbers: menu_numbers }]),
-                    false => Err(FoodNotOutstanding)
+                if state.is_food_outstanding(&menu_numbers) {
+                    Ok(vec![FoodServed { menu_numbers: menu_numbers }])
+                } else {
+                    Err(FoodNotOutstanding)
                 }
             },
             _ => Ok(vec![])
@@ -129,7 +131,7 @@ impl Aggregate for Tab {
 }
 
 impl State {
-    fn are_drinks_outstanding(&self, menu_numbers: &Vec<i32>) -> bool {
+    fn are_drinks_outstanding(&self, menu_numbers: &[i32]) -> bool {
         let mut current_outstanding_drinks = self.outstanding_drinks.clone();
 
         for menu_number in menu_numbers {
@@ -143,7 +145,7 @@ impl State {
         true
     }
 
-    fn is_food_outstanding(&self, menu_numbers: &Vec<i32>) -> bool {
+    fn is_food_outstanding(&self, menu_numbers: &[i32]) -> bool {
         let mut current_outstanding_food = self.outstanding_food.clone();
 
         for menu_number in menu_numbers {
